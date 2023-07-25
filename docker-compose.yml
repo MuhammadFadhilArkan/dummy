@@ -1,0 +1,87 @@
+version: '3.1'
+
+services:
+
+    api:
+        image: 192.168.7.176/fadhil.arkan/cf-analytics
+        depends_on:
+            - worker
+        command: gunicorn app.api.main:app --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:80
+        env_file:
+            - .env
+        ports:
+            - 80:80
+        volumes:
+            - ./:/var/www
+        networks:
+            cfa-network:
+        restart: always
+
+    worker: 
+        image: 192.168.7.176/fadhil.arkan/cf-analytics
+        env_file:
+            - .env
+        command: 
+            - /bin/sh
+            - -c
+            - |
+              celery -A app.worker.main worker --concurrency 1 --loglevel=info -n worker_cfa -Q cfa
+        volumes:
+            - ./:/var/www
+        depends_on:
+            - broker
+        networks:
+            cfa-network:
+        restart: always
+
+
+    broker:
+        image: rabbitmq:3.8.27-management-alpine
+        volumes:
+            - ./conf/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf
+        ports:
+            - 5672:5672
+            - 15672:15672
+        networks:
+            cfa-network:
+        restart: always
+
+    flower:
+        image: mher/flower:latest
+        environment:
+            - CELERY_BROKER_URL=${CELERY_BROKER_URL}
+            - FLOWER_UNAUTHENTICATED_API=${FLOWER_UNAUTHENTICATED_API}
+            - FLOWER_PORT=8888
+        ports:
+            - 8889:8888
+        depends_on:
+            - broker
+        networks:
+            cfa-network:
+        restart: always
+
+    minio:
+        restart: always
+        image: minio/minio@sha256:beb5fd646b298e0e732c186215926d5ebf8cb0d2ff573bba17b4c4b22ec90ade
+        ports:
+            - "9000"
+            - "9001:9001"
+        command: server /data --console-address ':9001' --address ':9000'
+        environment:
+            - MINIO_ROOT_USER=${AWS_ACCESS_KEY_ID}
+            - MINIO_ROOT_PASSWORD=${AWS_SECRET_ACCESS_KEY}
+        volumes:
+            - minio_data:/data
+        networks:
+            cfa-network:
+
+
+networks:
+  cfa-network:
+
+volumes:
+    minio_data:
+
+
+
+
